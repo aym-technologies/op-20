@@ -145,11 +145,11 @@ export class Op20 extends SmartContract {
     @method()
     static txidToAscii(txId: ByteString): ByteString {
         let res = toByteString('')
-        for (let i = 0; i < 32; i++) {
-            const char =
-                slice(txId, BigInt(i), BigInt(i + 1)) + toByteString('00')
-            const pos = byteString2Int(char) * 2n
-            res += slice(Op20.hexAsciiTable, pos, pos + 2n)
+        for (let i = 0n; i < 32n; i++) {
+            const bytePos = 31n - i
+            const byte = slice(txId, bytePos, bytePos + 1n)
+            const hexPos = byteString2Int(byte + toByteString('00')) * 2n
+            res += slice(Op20.hexAsciiTable, hexPos, hexPos + 2n)
         }
         return res
     }
@@ -165,9 +165,7 @@ export class Op20 extends SmartContract {
         nextInstance.pow = nextInstance.validatePOW(nonce)
         if (nextInstance.id == toByteString('')) {
             nextInstance.id = toByteString(
-                `${Buffer.from(options.fromUTXO!.txId, 'hex')
-                    .reverse()
-                    .toString('hex')}_${options.fromUTXO!.outputIndex}`,
+                `${options.fromUTXO!.txId}_${options.fromUTXO!.outputIndex}`,
                 true
             )
         }
