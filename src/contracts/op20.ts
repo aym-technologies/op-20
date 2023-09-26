@@ -70,7 +70,7 @@ export class Op20 extends SmartContract {
         let stateOutput = toByteString('')
         if (this.supply > 0n) {
             stateOutput = this.buildStateOutput(1n)
-            const stateScript = slice(stateOutput, 8n)
+            const stateScript = slice(stateOutput, 11n)
             const insScript = Op20.buildInscription(this.id, this.supply)
             stateOutput = Utils.buildOutput(insScript + stateScript, 1n)
         }
@@ -80,10 +80,7 @@ export class Op20 extends SmartContract {
         )
 
         const outputs: ByteString = stateOutput + rewardOutput + trailingOutputs
-        assert(
-            hash256(outputs) == this.ctx.hashOutputs,
-            `invalid outputs hash ${stateOutput} ${rewardOutput} ${trailingOutputs}`
-        )
+        assert(hash256(outputs) == this.ctx.hashOutputs, `invalid outputs hash`)
     }
 
     @method()
@@ -105,11 +102,9 @@ export class Op20 extends SmartContract {
 
     @method()
     static buildInscription(id: ByteString, amt: bigint): ByteString {
-        const json: ByteString = toByteString(
-            '{"p":"bsv-20","op":"transfer","id":"',
-            true
-        )
-        id +
+        const json: ByteString =
+            toByteString('{"p":"bsv-20","op":"transfer","id":"', true) +
+            id +
             toByteString('","amt":"', true) +
             Op20.intToAscii(amt) +
             toByteString('"}', true)
@@ -118,6 +113,7 @@ export class Op20 extends SmartContract {
             toByteString(
                 '0063036f726451126170706c69636174696f6e2f6273762d323000'
             ) +
+            OpCode.OP_PUSHDATA1 +
             int2ByteString(len(json)) +
             json +
             OpCode.OP_ENDIF
@@ -150,7 +146,8 @@ export class Op20 extends SmartContract {
     static txidToAscii(txId: ByteString): ByteString {
         let res = toByteString('')
         for (let i = 0; i < 32; i++) {
-            const char = slice(txId, BigInt(i), BigInt(i + 1))
+            const char =
+                slice(txId, BigInt(i), BigInt(i + 1)) + toByteString('00')
             const pos = byteString2Int(char) * 2n
             res += slice(Op20.hexAsciiTable, pos, pos + 2n)
         }
@@ -167,17 +164,25 @@ export class Op20 extends SmartContract {
         const nextInstance = current.next()
         nextInstance.pow = nextInstance.validatePOW(nonce)
         if (nextInstance.id == toByteString('')) {
-            nextInstance.id =
-                Op20.txidToAscii(options.fromUTXO!.txId) +
-                toByteString('_', true) +
-                Op20.intToAscii(BigInt(options.fromUTXO!.outputIndex))
+            nextInstance.id = toByteString(
+                `${Buffer.from(options.fromUTXO!.txId, 'hex')
+                    .reverse()
+                    .toString('hex')}_${options.fromUTXO!.outputIndex}`,
+                true
+            )
         }
 
+        console.log('nextInstance.id: ', nextInstance.id)
         const reward = nextInstance.calculateReward()
-        const inscriptionScript = bsv.Script.fromHex(
+        nextInstance.supply -= reward
+
+        const stateScript = bsv.Script.fromHex(
+            Op20.buildInscription(nextInstance.id, nextInstance.supply) +
+                nextInstance.lockingScript.toHex()
+        )
+        const rewardScript = bsv.Script.fromHex(
             lock + Op20.buildInscription(nextInstance.id, current.reward)
         )
-        nextInstance.supply -= reward
 
         const unsignedTx: bsv.Transaction = new bsv.Transaction()
             // add contract input
@@ -185,14 +190,14 @@ export class Op20 extends SmartContract {
             // build next instance output
             .addOutput(
                 new bsv.Transaction.Output({
-                    script: nextInstance.lockingScript,
+                    script: stateScript,
                     satoshis: Number(1),
                 })
             )
-            // build payment output
+            // build reward output
             .addOutput(
                 new bsv.Transaction.Output({
-                    script: inscriptionScript,
+                    script: rewardScript,
                     satoshis: Number(1),
                 })
             )
